@@ -4,8 +4,11 @@ author: "Sattelmaier"
 date: "5 1 2021"
 output: html_document
 ---
+## 1 Project Objectives
 
-## Code
+This code presents an schedule R script for web scraping. As practical object serves the web presence of one of Germany's leading alterantive music magazines: 'visions.de'. The magazine rates and awards the best music album released in the current week. This means that the award-winning album on this page will change weekly. The goal is to scrape the published album information on a weekly basis and merge it into a single table. 
+
+## 2 Code
 
 ### Load packages
 ```{r}
@@ -14,12 +17,13 @@ library(httr)
 library(rvest)
 library(dplyr)
 library(stringr)
+library(taskscheduleR)
 ```
 
 ### Get and set working directory
 ```{r}
 getwd()
-setwd("C:/Users/maiks/Documents/R")
+setwd("C:/Users/maiks/Documents/R/R-Code-Snippets/Web Scraping")
 ```
 
 ### Create empty data frame for first script run
@@ -34,8 +38,10 @@ df <- data.frame(band = character(),
                  stringsAsFactors=FALSE)
 ```
 
-### Load csv-file from previous script runs 
-```{r}
+### Load .csv file 
+Load .csv file from previous script runs.
+Skip this code in the first run!
+```{r load_data}
 df <- read_csv("visions_album_of_the_week", 
                col_types = cols(add_time = col_datetime(format = "%Y-%m-%d %H:%M:%S"),
                                 release = col_date(format = "%Y-%m-%d"))) 
@@ -52,12 +58,12 @@ visions_html <- read_html("https://www.visions.de/platten/platte-der-woche/") #
 class(visions_html) # xml-type variable is created
 ```
 
-#### Basic scraping codes 
+#### Basic scraping code snippets
 ```{r, include = FALSE}
 xml_structure(visions_html) # for overview of the hierarchy
 ```
 
-```{r}
+```{r, include = FALSE}
 visions_html %>%
   html_children() %>%
     html_text() # Extract all the text
@@ -89,14 +95,14 @@ album <- word(name_raw, 2, sep = "\\-") %>%
           str_squish() 
 ```
 
-## use XPath:
+Benefits using XPath-method:
 - unique node
 - applied for complex selectors
 - select nodes on properties 
 
 #### Release Date
 ```{r}
-release <- read_html("https://www.visions.de/platten/platte-der-woche/") %>% 
+release <- visions_html %>% 
   html_nodes(xpath = '/html/body/div[1]/div[2]/div[4]/div[2]/div[2]/ul/li[1]') %>%  
   html_text() %>%
   str_squish() %>%
@@ -104,9 +110,9 @@ release <- read_html("https://www.visions.de/platten/platte-der-woche/") %>%
   as.Date(tryFormats = c("%d.%m.%Y"))
 ```
 
-#### Mentioned in w
+#### Mentioned in print issue
 ```{r}
-issue_raw <- read_html("https://www.visions.de/platten/platte-der-woche/") %>% 
+issue_raw <- visions_html %>% 
   html_nodes(xpath = '/html/body/div[1]/div[2]/div[4]/div[2]/div[2]/ul/li[3]') %>%
   html_text() %>%
   str_squish() %>% # remove whitespaces
@@ -114,26 +120,29 @@ issue_raw <- read_html("https://www.visions.de/platten/platte-der-woche/") %>%
   as.numeric()
 ```
 
+#### Lead of the article
 ```{r}
-lead <- read_html("https://www.visions.de/platten/platte-der-woche/") %>% 
+lead <- visions_html %>% 
   html_nodes(xpath = '//*[@id="cf"]/div/p/strong') %>% 
   html_text() %>%
   str_squish()
-as.character(lead)
 ```
 
+#### Main text of the article
 ```{r}
-main_raw <- read_html("https://www.visions.de/platten/platte-der-woche/") %>% 
+main <- visions_html %>% 
   html_nodes(xpath = '//*[@id="cf"]/div[position() = 4]') %>% 
   html_text() %>%
   str_squish()
 ```
 
+#### Update time
 ```{r}
 time <- Sys.time()
 ```
 
-
+### Merge information
+Merge all Information of the current 'album of the week' into one concise tibble
 ```{r}
 album <- tibble('band' = band,
                 'album' = album,
@@ -144,13 +153,42 @@ album <- tibble('band' = band,
                 'main' = main)
 ```
 
+### Append album 
+Append this album to the existing tibble, iff it is not yet listed in the table.
 ```{r, message = FALSE}
 if(!(album$band %in% df$band) && !(album$album %in% df$album)){
   df = rbind(album,df)
 } else {print('Album is already in the data frame.')}
 ```
 
+### Save the new dataframe
 ```{r}
 write.csv(df, file = 'visions_album_of_the_week')
+```
+
+## 3 Automation 
+
+There exist several solutions to automate this task. One can either use the built-in Windows task scheduler or perform automation with R code using the 'taskscheduleR' package.
+
+The problem of how to load the empty dataframe for the first run remains. Hence, the code should be run the first time manually without the code 'Load CSV file'.
+
+### Using taskscheduleR
+
+First, store the code in a single R script, called 'visionsweeklyscript'. 
+
+```{r}
+taskscheduler_create(taskname = "visions_album_weekly", rscript = "C:/Users/maiks/Documents/R/R-Code-Snippets/Web Scraping/visionsweeklyscript.R", 
+                     schedule = "WEEKLY", starttime = "09:10", days = c('WED', 'SAT'))
+```
+
+Get data.frame of all tasks
+```{r}
+tasks <- taskscheduler_ls()
+str(tasks)
+```
+
+Delete Task if necessary
+```{r}
+taskscheduler_delete(taskname = "visions_album_weekly")
 ```
 
