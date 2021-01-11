@@ -1,0 +1,156 @@
+---
+title: "Web Scraping Visions Web Page"
+author: "Sattelmaier"
+date: "5 1 2021"
+output: html_document
+---
+
+## Code
+
+### Load packages
+```{r}
+library(readr)
+library(httr)
+library(rvest)
+library(dplyr)
+library(stringr)
+```
+
+### Get and set working directory
+```{r}
+getwd()
+setwd("C:/Users/maiks/Documents/R")
+```
+
+### Create empty data frame for first script run
+```{r}
+df <- data.frame(band = character(),
+                 album = character(),
+                 release = as.Date(character()),
+                 issue = as.numeric(),
+                 add_time = as.Date(character()),
+                 lead = character(),
+                 main = character(),
+                 stringsAsFactors=FALSE)
+```
+
+### Load csv-file from previous script runs 
+```{r}
+df <- read_csv("visions_album_of_the_week", 
+               col_types = cols(add_time = col_datetime(format = "%Y-%m-%d %H:%M:%S"),
+                                release = col_date(format = "%Y-%m-%d"))) 
+# read_csv creates an extra column; no convinient solution yet
+
+df <- df[-1]
+```
+### Load url to scrape
+```{r}
+visions_url = GET('https://www.visions.de/platten/platte-der-woche/')
+status_code(visions_url) # check availability of website: 200 = okay
+
+visions_html <- read_html("https://www.visions.de/platten/platte-der-woche/") # 
+class(visions_html) # xml-type variable is created
+```
+
+#### Basic scraping codes 
+```{r, include = FALSE}
+xml_structure(visions_html) # for overview of the hierarchy
+```
+
+```{r}
+visions_html %>%
+  html_children() %>%
+    html_text() # Extract all the text
+```
+
+```{r}
+p_node <- visions_html %>%
+  html_nodes('p')
+p_node
+```
+
+```{r}
+#children of p_node
+p_node %>% html_children()
+```
+
+### Get values
+
+#### Band & Album
+```{r}
+name_raw <- visions_html %>% 
+  html_nodes('h1') %>% # 'h1'-argument extracted from web-page html source code; using css method
+  html_text() %>%
+  str_squish() # remove whitespaces
+
+band <- word(name_raw, 1, sep = "\\-") %>%
+          str_squish()
+album <- word(name_raw, 2, sep = "\\-") %>%
+          str_squish() 
+```
+
+## use XPath:
+- unique node
+- applied for complex selectors
+- select nodes on properties 
+
+#### Release Date
+```{r}
+release <- read_html("https://www.visions.de/platten/platte-der-woche/") %>% 
+  html_nodes(xpath = '/html/body/div[1]/div[2]/div[4]/div[2]/div[2]/ul/li[1]') %>%  
+  html_text() %>%
+  str_squish() %>%
+  gsub(pattern = "[^0-9.]", replacement = "") %>% # clean date
+  as.Date(tryFormats = c("%d.%m.%Y"))
+```
+
+#### Mentioned in w
+```{r}
+issue_raw <- read_html("https://www.visions.de/platten/platte-der-woche/") %>% 
+  html_nodes(xpath = '/html/body/div[1]/div[2]/div[4]/div[2]/div[2]/ul/li[3]') %>%
+  html_text() %>%
+  str_squish() %>% # remove whitespaces
+  gsub(pattern = "[^0-9]", replacement = "") %>%
+  as.numeric()
+```
+
+```{r}
+lead <- read_html("https://www.visions.de/platten/platte-der-woche/") %>% 
+  html_nodes(xpath = '//*[@id="cf"]/div/p/strong') %>% 
+  html_text() %>%
+  str_squish()
+as.character(lead)
+```
+
+```{r}
+main_raw <- read_html("https://www.visions.de/platten/platte-der-woche/") %>% 
+  html_nodes(xpath = '//*[@id="cf"]/div[position() = 4]') %>% 
+  html_text() %>%
+  str_squish()
+```
+
+```{r}
+time <- Sys.time()
+```
+
+
+```{r}
+album <- tibble('band' = band,
+                'album' = album,
+                'release' = release, 
+                'issue' = issue_raw, 
+                'add_time' = time,
+                'lead' = lead, 
+                'main' = main)
+```
+
+```{r, message = FALSE}
+if(!(album$band %in% df$band) && !(album$album %in% df$album)){
+  df = rbind(album,df)
+} else {print('Album is already in the data frame.')}
+```
+
+```{r}
+write.csv(df, file = 'visions_album_of_the_week')
+```
+
